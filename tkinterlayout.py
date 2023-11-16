@@ -88,7 +88,7 @@ class MainPage(tk.Frame):
 
         # Botón para seleccionar la carpeta #
         self.directory_path = None
-        self.select_directory = ttk.Button(self, text="Cargar archivos de carpeta", command=self.browse_button)
+        self.select_directory = ttk.Button(self, text="Cargar archivos desde carpeta", command=self.browse_button)
         self.select_directory.place(x=10, y=110)
 
         # Botón para cargar un dataset completo #
@@ -100,15 +100,15 @@ class MainPage(tk.Frame):
         self.load_button.place(x=10, y = 160)
 
         # Label para mostrar el path
-        self.directory_label_width = 95
-        self.directory_label = ttk.Label(self, text="Seleccione la ruta con los archivos", width=self.directory_label_width)
-        self.directory_label.place(x=210, y=75)
+        self.directory_label_width = 135
+        self.directory_label = ttk.Label(self, width=self.directory_label_width)
+        self.directory_label.place(x=10, y=75)
 
         # Caja de dialogo
         self.dialog_box = scrolledtext.ScrolledText(self, undo=True, width=80, height=20, font=("Arial", 11))
         self.dialog_box.insert(tk.END, "Selecciona un archivo de datos o una carpeta.")
         self.dialog_box.config(state=tk.DISABLED)
-        self.dialog_box.place(x = 210, y = 100)
+        self.dialog_box.place(x = 230, y = 100)
 
         # Boton para guardar un dataset completo #
         self.save_button = ttk.Button(
@@ -128,35 +128,40 @@ class MainPage(tk.Frame):
 
         switch_window_button.pack(side="bottom", fill=tk.X)
 
+    def update_directory_path(self, path):
+        global directory_path
+        directory_path = path
+        self.directory_path = path
+        directory_label_text = 'Ruta actual:  ' + path
+        if len(directory_label_text) > self.directory_label_width:
+            directory_label_text = directory_label_text[:self.directory_label_width-3] + "..."
+        self.directory_label.configure(text=directory_label_text)
+
+
     def browse_button(self):
         # Allow user to select a directory and store it in global var
         # called folder_path
-        self.directory_path = filedialog.askdirectory()
-        if self.directory_path is not None and self.directory_path != '':
-            global directory_path
-            directory_path = self.directory_path
-            directory_label_text = self.directory_path[:self.directory_label_width-3] + "..." if len(self.directory_path) > self.directory_label_width else self.directory_path
-            self.directory_label.configure(text=directory_label_text)
+        path = filedialog.askdirectory()
+        if path is not None and path != '':
+            self.update_directory_path(path) 
             self.convert_files_fn()
 
     def load_button_fn(self):
 
-        global dataframe, loaded_analisis_frame, directory_path
+        global dataframe, loaded_analisis_frame
 
         # Cargar dataset
-        # file_path_hanlder = filedialog.askopenfile()
         file_path_hanlder = filedialog.askopenfile(title="Seleccionar archivo", filetypes=[("Archivo de datos", "*.csv")]
     )
 
         if file_path_hanlder is not None:
 
             file_path = file_path_hanlder.name
-            directory_path = os.path.dirname(file_path)
-            self.directory_path = os.path.dirname(file_path)
-
-            if file_path[-4:] == '.csv':
-                
+            file_name = os.path.basename(file_path)
+            
+            if file_path.endswith('.csv') and 'distances_matrix' not in file_name:
                 dataframe = pd.read_csv(file_path, dtype={'player_id': str})
+                self.update_directory_path(os.path.dirname(file_path)) 
                 self.dialog("Se ha cargado un nuevo archivo de: " + file_path)
 
             else:
@@ -200,7 +205,7 @@ class MainPage(tk.Frame):
             csv_files = []
 
             for file in files_in_path:
-                if file[-4:] == '.csv' and file != "all_data.csv":
+                if file[-4:] == '.csv' and file != "all_data.csv" and file != "distances_matrix.csv":
                     csv_files.append(file)
 
             if len(csv_files) == 0:
@@ -520,21 +525,15 @@ def get_metrics(dataset: pd.DataFrame):
         fecha_str = fecha.strftime("%d-%m-%Y %H:%M:%S")
         rows_to_add = pd.DataFrame({'timestamp': [fecha_str] * len(player_ids), 'player_id': player_ids})
         distances_matrix = pd.concat([distances_matrix, rows_to_add], ignore_index=True)
-        for i in range(len(player_ids)-1):
-            for j in range(i + 1, len(player_ids)):
-                # Filtrar para que x1 sea el valor del dataset que coincida con el player_id y el timestamp
-                x1 = dataset[(dataset['player_id'] == player_ids[i]) & (dataset['timestamp'] == fecha)]['X_filtered'].iloc[0]
-                y1 = dataset[(dataset['player_id'] == player_ids[i]) & (dataset['timestamp'] == fecha)]['Y_filtered'].iloc[0]
-                x2 = dataset[(dataset['player_id'] == player_ids[j]) & (dataset['timestamp'] == fecha)]['X_filtered'].iloc[0]
-                y2 = dataset[(dataset['player_id'] == player_ids[j]) & (dataset['timestamp'] == fecha)]['Y_filtered'].iloc[0]
 
-                distance = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
-                
-                distances_matrix.loc[(distances_matrix['player_id'] == player_ids[i]) & (distances_matrix['timestamp'] == fecha_str), player_ids[j]] = distance
-                distances_matrix.loc[(distances_matrix['player_id'] == player_ids[j]) & (distances_matrix['timestamp'] == fecha_str), player_ids[i]] = distance
-    distances_matrix.fillna(0, inplace=True)
+        x_filtered = dataset[dataset['timestamp'] == fecha]['X_filtered'].values
+        y_filtered = dataset[dataset['timestamp'] == fecha]['Y_filtered'].values
 
-    # distances_matrix.to_csv(f'{directory_path}/test_distances_matrix.csv')
+        distances = np.sqrt(((x_filtered[:, np.newaxis] - x_filtered) ** 2) + ((y_filtered[:, np.newaxis] - y_filtered) ** 2))
+
+        distances_matrix.loc[distances_matrix['timestamp'] == fecha_str, player_ids] = distances
+
+    distances_matrix.to_csv(f'{directory_path}/distances_matrix.csv')
     
     df_results = pd.DataFrame(results, columns=['player_id', 'distancia', 'velocidad_media'])
 
