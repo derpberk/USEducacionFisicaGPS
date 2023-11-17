@@ -176,15 +176,16 @@ class MainPage(tk.Frame):
         if dataframe is None:
             self.dialog("No hay ningún conjunto de datos cargado. Por favor, cargue uno o seleccione una carpeta.")
         else:
-            file_path = filedialog.askdirectory()
+            file_path = filedialog.asksaveasfilename(defaultextension=".csv", initialfile='all_data', filetypes=[("Archivo de datos", "*.csv"), ("Todos los archivos", "*.*")])
 
             print(file_path)
 
             if file_path is not None and dataframe is not None and file_path != "":
 
                 try: 
-                    dataframe.to_csv(file_path + '/all_data.csv')
-                    self.dialog("Dataset guardado en: " + file_path + '/all_data.csv')
+                    # dataframe.to_csv(file_path + '/all_data.csv')
+                    dataframe.to_csv(file_path)
+                    self.dialog("Dataset guardado en: " + file_path)
 
                 except:
                     self.popup_showinfo("Error", "Ha habido un error en el guardado.")
@@ -278,13 +279,22 @@ class Analisis(tk.Frame):
             )
             self.analyze_results_button.place(x=10, y=70)
 
-            self.date_entry = DateEntry(self, width=12, background='darkblue', foreground='white', borderwidth=1, 
-                                        date_pattern='dd/mm/y', showweeknumbers=False, locale='es_ES')
-            self.last_event_date = pd.to_datetime(dataframe['timestamp'].max())
-            self.date_entry.set_date(self.last_event_date) # fecha por defecto la del último evento
+            # Widget de calendario #
+            self.date_entry = DateEntry(self, width=12, showothermonthdays=False, background='darkblue', foreground='white', borderwidth=1,
+                                        date_pattern='dd/mm/y', showweeknumbers=False, locale='es_ES', 
+                                        weekendbackground = 'white', weekendforeground = 'black',
+                                        othermonthbackground = 'whitesmoke', othermonthforeground = 'lightgray',
+                                        othermonthwebackground = 'whitesmoke', othermonthweforeground = 'lightgray')
+            
+            self.event_dates = pd.to_datetime(dataframe['timestamp']).dt.date.unique()
+            self.date_entry.set_date(self.event_dates.max()) # fecha por defecto la del último evento
+            for date_str in self.event_dates: # fechas de eventos en verde
+                self.date_entry._calendar.calevent_create(date_str,'event', 'event')
+            self.date_entry._calendar.tag_config('event', background='lawngreen', foreground='black') 
+
             self.date_entry.place(x=10, y=110)
 
-            # Botón para poner como fecha la última misión encontrada
+            # Botón para poner como fecha actual la última misión encontrada
             self.last_event_button = ttk.Button(
                 self,
                 text="Ir al último evento",
@@ -293,38 +303,7 @@ class Analisis(tk.Frame):
             self.last_event_button.place(x=10, y=150)
 
             # Plot space
-            with plt.style.context('seaborn-darkgrid'):
-                self.fig = MatplotlibFigure(figsize=(7, 3.5))
-                self.plot_space = FigureCanvasTkAgg(self.fig, master=self)
-                self.plot_space.draw()
-                self.plot_space.get_tk_widget().place(x=200, y=70)
-
-                # Remove fig background
-                self.fig.patch.set_facecolor('#2b2b2b')
-
-                self.ax = self.fig.add_subplot(111)
-                # Set axis colrs in white
-                self.ax.spines['bottom'].set_color('white')
-
-                # Set ticks numbers on white
-                self.ax.tick_params(axis='x', colors='white')
-                self.ax.tick_params(axis='y', colors='white')
-
-                # Set axis labels in white
-                self.ax.xaxis.label.set_color('white')
-                self.ax.yaxis.label.set_color('white')
-
-                self.ax.set_xlabel('X (m)')
-                self.ax.set_ylabel('Y (m)')
-
-                # Aspect ratio 1:1
-                self.ax.set_aspect('equal', adjustable='box')
-
-                self.fig.set_tight_layout(True)
-
-                toolbar = NavigationToolbar2Tk(self.plot_space, self)
-                toolbar.update()
-                self.plot_space.get_tk_widget().place(x=200, y=70)
+            self.create_plot_space()
             
             # Icono e información de carga
             img = Image.open("loading.png")
@@ -341,7 +320,7 @@ class Analisis(tk.Frame):
             self.nodata_label.place(x=310, y=230)
 
     def last_event_fn(self):
-        self.date_entry.set_date(self.last_event_date)
+        self.date_entry.set_date(self.event_dates.max())
 
     def analyze_results_fn(self):
 
@@ -467,15 +446,52 @@ class Analisis(tk.Frame):
     def popup_showinfo(title, msg):
         tk.messagebox.showinfo(message=msg, title=title)
 
+    def create_plot_space(self):
+        if hasattr(self, 'toolbar'):
+            self.toolbar.destroy()
+        if hasattr(self, 'plot_space'):
+            self.plot_space.get_tk_widget().destroy()
+            
+        with plt.style.context('seaborn-darkgrid'):
+            self.fig = MatplotlibFigure(figsize=(7, 3.5))
+            self.plot_space = FigureCanvasTkAgg(self.fig, master=self)
+            self.plot_space.draw()
+
+            # Remove fig background
+            self.fig.patch.set_facecolor('#2b2b2b')
+
+            self.ax = self.fig.add_subplot(111)
+            # Set axis colrs in white
+            self.ax.spines['bottom'].set_color('white')
+
+            # Set ticks numbers on white
+            self.ax.tick_params(axis='x', colors='white')
+            self.ax.tick_params(axis='y', colors='white')
+
+            # Set axis labels in white
+            self.ax.xaxis.label.set_color('white')
+            self.ax.yaxis.label.set_color('white')
+
+            self.ax.set_xlabel('X (m)')
+            self.ax.set_ylabel('Y (m)')
+
+            # Aspect ratio 1:1
+            self.ax.set_aspect('equal', adjustable='box')
+
+            self.fig.set_tight_layout(True)
+
+            self.plot_space.get_tk_widget().place(x=200, y=70)
+
+            self.toolbar = NavigationToolbar2Tk(self.plot_space, self)
+            self.toolbar.update()
+
     def plot_trajectories(self, dataset):
 
         # Obtenemos los player_id
         players_ids = dataset['player_id'].unique()
 
-        # Limpiamos el plot space si ya hay algo
-        if hasattr(self.ax, 'lines'):
-            for line in self.ax.lines:
-                line.remove()
+        # Se crea un nuevo plot space
+        self.create_plot_space()
 
         for player_id in players_ids:
 
@@ -483,7 +499,6 @@ class Analisis(tk.Frame):
             df_player = dataset[dataset['player_id'] == player_id]
 
             data = self.ax.plot(df_player['X_filtered'], df_player['Y_filtered'], label=player_id, alpha=0.5)
-
         
         # Show
         self.ax.legend()
